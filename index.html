@@ -3443,5 +3443,83 @@ patch6.txt
 })();
 </script>
 
+
+Muse
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+patch7.txt
+<!-- ================================================================
+     ★★★ 补丁 v7：搜索入口前置（看板标题旁 + 页头各一个） ★★★
+     真搜索框本来就在看板标题下方，但样式低调、访客容易错过。
+     本补丁在「基金数据看板」标题旁和页头导航各加一个显眼的
+     搜索入口（长得和搜索框一样），点一下自动平滑滚动到真搜索框、
+     光标落进去并高亮一圈，访客落地就能搜，不改动原搜索逻辑。
+     ================================================================ -->
+<style>
+  .v7sbox{display:flex;align-items:center;gap:7px;border:1.5px solid var(--brand,#2563eb);background:var(--surface2,#f6f8fb);border-radius:999px;padding:8px 14px;font-size:13px;color:var(--muted,#8a93a6);cursor:text;max-width:340px;width:100%;text-align:left}
+  .v7sbox .v7mag{color:var(--brand,#2563eb);font-size:15px}
+  .v7sbox input{border:0;outline:0;background:transparent;font-size:13px;width:100%;color:inherit;cursor:text;padding:0}
+  #v7HeadBox{max-width:210px;padding:6px 12px;font-size:12.5px;flex:none}
+  @keyframes v7ring{0%{box-shadow:0 0 0 0 rgba(37,99,235,.55)}100%{box-shadow:0 0 0 12px rgba(37,99,235,0)}}
+  #fundSearch.v7hl{animation:v7ring 1s ease-out 2;border-color:var(--brand,#2563eb)}
+</style>
+<script>
+(function(){
+  "use strict";
+  function $(id){ return document.getElementById(id); }
+  function jumpToSearch(carry){
+    var inp=$("fundSearch"); if(!inp) return;
+    if(carry){ inp.value=carry; }
+    inp.scrollIntoView({behavior:"smooth", block:"center"});
+    setTimeout(function(){
+      inp.focus({preventScroll:true});
+      if(carry) inp.dispatchEvent(new Event("input",{bubbles:true}));
+      inp.classList.remove("v7hl"); void inp.offsetWidth; inp.classList.add("v7hl");
+      setTimeout(function(){ inp.classList.remove("v7hl"); }, 2100);
+    }, 550);
+  }
+  function makeBox(id, placeholder){
+    var wrap=document.createElement("div");
+    wrap.className="v7sbox"; if(id) wrap.id=id;
+    wrap.innerHTML="<span class='v7mag' aria-hidden='true'>⌕</span><input type='text' readonly placeholder='"+placeholder+"' aria-label='跳转到基金搜索框'>";
+    var inner=wrap.querySelector("input");
+    function go(){
+      var v=inner.value||"";
+      jumpToSearch(v);
+      inner.value=""; inner.blur();
+    }
+    inner.addEventListener("focus", go);
+    wrap.addEventListener("click", go);
+    return wrap;
+  }
+  /* 1) 看板标题旁 */
+  var sec=document.querySelector("#funds .sec-head");
+  if(sec){
+    var box=makeBox("", "搜基金：输入代码 / 名称，如 005827 / 白酒");
+    box.style.marginTop="10px";
+    sec.appendChild(box);
+  }
+  /* 2) 页头导航里（访客一进页面就能看到） */
+  var nav=document.querySelector("header.site .nav");
+  if(nav){
+    var hbox=makeBox("v7HeadBox", "搜基金");
+    nav.appendChild(hbox);
+  }
+})();
+</script>
 </body>
 </html>
