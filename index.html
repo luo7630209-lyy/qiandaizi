@@ -2836,5 +2836,246 @@ patch.txt
 })();
 </script>
 
+
+Muse
+
+
+
+
+
+
+
+
+
+
+
+
+
+patch4.txt
+<!-- ================================================================
+     ★★★ 补丁 v4：全市场搜索增强 + 刷新按钮 + 拉取时间 ★★★
+     1. 搜索联想超时 2.5 秒 → 6 秒并自动重试一次，减少“搜不出来”
+     2. 输入 6 位基金代码可直查（联想没匹配到也能点进去看实时数据）
+     3. 货币基金（如余额宝类）没有净值曲线时，改显示每万份收益、七日年化
+     4. 新增“刷新实时数据”按钮；每次查看基金都标注数据拉取时间
+     5. 详情页净值数字更新时闪烁（涨红 / 跌绿）
+     ================================================================ -->
+<style>
+  #liveBar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0 4px}
+  #liveRefreshBtn{border:1px solid var(--brand);background:var(--brand);color:#fff;border-radius:999px;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer}
+  #liveRefreshBtn:disabled{opacity:.55;cursor:wait}
+  #pullStamp{font-size:12px;color:var(--muted)}
+  #liveNotice{display:none;margin-top:10px;border:1px dashed var(--line);border-radius:10px;padding:9px 12px;font-size:12.5px;line-height:1.7;color:var(--muted);background:var(--surface2)}
+  @keyframes tickFlashUp{0%{background:rgba(239,68,68,.38)}100%{background:transparent}}
+  @keyframes tickFlashDn{0%{background:rgba(16,185,129,.38)}100%{background:transparent}}
+  .flash-up{animation:tickFlashUp .9s ease-out;border-radius:4px}
+  .flash-dn{animation:tickFlashDn .9s ease-out;border-radius:4px}
+</style>
+<script>
+(function(){
+  "use strict";
+  function $(id){ return document.getElementById(id); }
+  function pad2(n){ return (n<10?"0":"")+n; }
+  function timeStr(d){ return pad2(d.getHours())+":"+pad2(d.getMinutes())+":"+pad2(d.getSeconds()); }
+  function dateStr(ts){ var d=new Date(ts); return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
+  function loadScript(url, timeoutMs){
+    return new Promise(function(resolve){
+      var s=document.createElement("script"), done=false;
+      s.src=url; s.async=true; s.referrerPolicy="no-referrer";
+      var t=setTimeout(function(){ if(!done){done=true; s.remove(); resolve(false);} }, timeoutMs||6000);
+      s.onload=function(){ if(!done){done=true; clearTimeout(t); s.remove(); resolve(true);} };
+      s.onerror=function(){ if(!done){done=true; clearTimeout(t); s.remove(); resolve(false);} };
+      document.head.appendChild(s);
+    });
+  }
+  function flash(el, dir){
+    if(!el) return;
+    el.classList.remove("flash-up","flash-dn");
+    void el.offsetWidth;
+    el.classList.add(dir==="up"?"flash-up":"flash-dn");
+    setTimeout(function(){ el.classList.remove("flash-up","flash-dn"); }, 950);
+  }
+
+  /* ---------- 1. 全市场搜索增强（替换 FundDataService.search） ---------- */
+  function localSearch(q){
+    var s=(q||"").trim().toLowerCase();
+    if(!s) return (window.FUND_DATA||[]).slice();
+    return (window.FUND_DATA||[]).filter(function(f){
+      return f.code.indexOf(s)===0
+        || (f.name||"").toLowerCase().indexOf(s)>=0
+        || (f.py||"").toLowerCase().indexOf(s)>=0
+        || (f.init||"").toLowerCase().indexOf(s)>=0
+        || (f.kw||"").toLowerCase().indexOf(s)>=0;
+    });
+  }
+  function fetchSuggestOnce(q){
+    return new Promise(function(resolve){
+      var cbName="__v4Suggest_"+Date.now()+"_"+Math.floor(Math.random()*1e6), done=false;
+      window[cbName]=function(res){
+        if(done) return; done=true; delete window[cbName];
+        resolve(res && Array.isArray(res.Datas) ? res.Datas : []);
+      };
+      var s=document.createElement("script");
+      s.src="https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key="+encodeURIComponent(q)+"&callback="+cbName+"&_="+Date.now();
+      s.async=true; s.referrerPolicy="no-referrer";
+      var t=setTimeout(function(){ if(!done){done=true; delete window[cbName]; s.remove(); resolve(null);} }, 6000);
+      s.onerror=function(){ if(!done){done=true; clearTimeout(t); delete window[cbName]; s.remove(); resolve(null);} };
+      s.onload=function(){ clearTimeout(t); s.remove(); };
+      document.head.appendChild(s);
+    });
+  }
+  function buildFund(item){
+    var base=item.FundBaseInfo||{};
+    var ftype=base.FTYPE||"公募基金";
+    var riskLevel=ftype.indexOf("债")>=0?2:(ftype.indexOf("指数")>=0||ftype.indexOf("股票")>=0?4:3);
+    return {
+      code:item.CODE, name:item.NAME,
+      type:ftype.split("-")[0]||"混合型", cat:ftype, risk:riskLevel,
+      py:(item.JP||"").toLowerCase(), init:(item.JP||"").toLowerCase(),
+      kw:item.NAME+" "+ftype,
+      nav:+(base.DWJZ||1.0), cum:+(base.DWJZ||1.0), dchg:0,
+      asOf:base.FSRQ||window.FUND_DATA_ASOF||"",
+      stage:{w:0,m1:0,m3:0,m6:0,ytd:0,y1:0,y2:0,y3:0,all:0},
+      dDates:(window.D_STD||[]).slice(), dNav:[1,1,1,1,1,1,1,1,1,1,1],
+      _dwjz:base.DWJZ||null, _fsrq:base.FSRQ||null,
+      _isMoney:ftype.indexOf("货币")>=0
+    };
+  }
+  if(window.FundDataService){
+    FundDataService.search=function(q){
+      var cleanQ=(q||"").trim();
+      if(!cleanQ) return Promise.resolve(localSearch(""));
+      var local=localSearch(cleanQ);
+      return fetchSuggestOnce(cleanQ).then(function(datas){
+        if(datas===null) return fetchSuggestOnce(cleanQ); /* 超时自动重试一次 */
+        return datas;
+      }).then(function(datas){
+        var merged=local.slice(), seen={};
+        merged.forEach(function(f){ seen[f.code]=true; });
+        (datas||[]).forEach(function(item){
+          var isFund=item.CATEGORY===700||item.CATEGORY==="700"||item.CATEGORYDESC==="基金";
+          if(!isFund||!item.CODE||seen[item.CODE]) return;
+          var nf=buildFund(item);
+          if(!FundDataService.getByCode(nf.code)) FUND_DATA.push(nf);
+          merged.push(nf); seen[nf.code]=true;
+        });
+        /* 输入完整 6 位代码时，保证有一条可直查的入口 */
+        if(/^\d{6}$/.test(cleanQ) && !seen[cleanQ]){
+          var direct={
+            code:cleanQ, name:"基金代码 "+cleanQ+"（点击直查实时数据）",
+            type:"公募基金", cat:"按代码直查", risk:3, py:"", init:"", kw:cleanQ,
+            nav:1, cum:1, dchg:0, asOf:window.FUND_DATA_ASOF||"",
+            stage:{w:0,m1:0,m3:0,m6:0,ytd:0,y1:0,y2:0,y3:0,all:0},
+            dDates:(window.D_STD||[]).slice(), dNav:[1,1,1,1,1,1,1,1,1,1,1], _direct:true
+          };
+          FUND_DATA.push(direct);
+          merged.unshift(direct);
+        }
+        return merged.slice(0,20);
+      });
+    };
+  }
+
+  /* ---------- 2. 刷新工具条（按钮 + 拉取时间） ---------- */
+  var dash=$("dash"), bar=null, stampEl=null, btnEl=null;
+  if(dash && dash.parentNode){
+    bar=document.createElement("div");
+    bar.id="liveBar";
+    bar.innerHTML="<button id='liveRefreshBtn' type='button'>↻ 刷新实时数据</button><span id='pullStamp'>打开页面或点任意基金时自动拉取天天基金最新数据</span>";
+    dash.parentNode.insertBefore(bar, dash);
+    stampEl=bar.querySelector("#pullStamp");
+    btnEl=bar.querySelector("#liveRefreshBtn");
+    btnEl.addEventListener("click", function(){
+      var f=window.currentFund;
+      if(f && window.selectFund) window.selectFund(f.code, false);
+    });
+  }
+  var noticeEl=null;
+  function getNotice(){
+    if(noticeEl) return noticeEl;
+    var anchor=$("fAsOf");
+    if(!anchor || !anchor.parentNode) return null;
+    noticeEl=document.createElement("div");
+    noticeEl.id="liveNotice";
+    anchor.parentNode.insertBefore(noticeEl, anchor.nextSibling);
+    return noticeEl;
+  }
+  function showNotice(html){
+    var n=getNotice(); if(!n) return;
+    if(html){ n.innerHTML=html; n.style.display="block"; }
+    else { n.style.display="none"; n.innerHTML=""; }
+  }
+
+  /* ---------- 3. 货币基金 / 短历史基金的真实数据兜底 ---------- */
+  function moneyData(code){
+    function read(){
+      var inc=window.Data_millionCopiesIncome, sev=window.Data_sevenDaysYearIncome;
+      if(String(window.fS_code||"")!==String(code)) return null;
+      if(!Array.isArray(inc)||!inc.length) return null;
+      var li=inc[inc.length-1];
+      var sv=(Array.isArray(sev)&&sev.length)?sev[sev.length-1]:null;
+      return { date:dateStr(li[0]), income:+li[1], seven:sv?+sv[1]:null };
+    }
+    var hit=read();
+    if(hit) return Promise.resolve(hit);
+    window.Data_millionCopiesIncome=null; window.Data_sevenDaysYearIncome=null;
+    return loadScript("https://fund.eastmoney.com/pingzhongdata/"+code+".js?v="+Date.now(), 5000).then(function(ok){
+      return ok?read():null;
+    });
+  }
+  function updateNotice(f){
+    if(!f) return;
+    var isMoney=f._isMoney || (f.cat||"").indexOf("货币")>=0 || (f.type||"").indexOf("货币")>=0;
+    if(f._isLive && !isMoney){ showNotice(""); return; }
+    if(isMoney){
+      moneyData(f.code).then(function(md){
+        if(md){
+          showNotice("这是一只<b>货币基金</b>，没有普通基金那种净值曲线，它的收益这样看：<br>每万份收益 <b>"+md.income.toFixed(4)+"</b> 元"
+            +(md.seven!=null?" · 七日年化 <b>"+md.seven.toFixed(4)+"%</b>":"")
+            +"（"+md.date+" · 拉取于 "+timeStr(new Date())+" · 来源：天天基金网）");
+        } else {
+          showNotice("这是一只<b>货币基金</b>，没有普通净值曲线；本次未拉到它的万份收益数据，点上方“刷新实时数据”可重试。（"+timeStr(new Date())+"）");
+        }
+      });
+      return;
+    }
+    if(!f._isLive){
+      if(f._dwjz){
+        showNotice("该基金历史数据较短，暂时画不出完整曲线。最新净值 <b>"+(+f._dwjz).toFixed(4)+"</b>（净值日期 "+(f._fsrq||f.asOf||"—")+" · 拉取于 "+timeStr(new Date())+" · 来源：天天基金网）");
+      } else {
+        showNotice("本次未拉到该基金的实时数据（接口超时或该基金暂无公开净值序列），点上方“刷新实时数据”可重试。（"+timeStr(new Date())+"）");
+      }
+    }
+  }
+
+  /* ---------- 4. 包裹 selectFund：拉取完成后打时间戳 + 数字闪烁 ---------- */
+  var origSelect=window.selectFund;
+  if(typeof origSelect==="function"){
+    window.selectFund=function(code, scroll){
+      var navEl=$("fNav"), dchgEl=$("fDchg");
+      var before={ nav:navEl?navEl.textContent:"", dchg:dchgEl?dchgEl.textContent:"" };
+      if(btnEl) btnEl.disabled=true;
+      origSelect(code, scroll);
+      var tries=0;
+      var iv=setInterval(function(){
+        tries++;
+        var loading=dash && dash.classList.contains("loading");
+        if(!loading || tries>45){
+          clearInterval(iv);
+          if(btnEl) btnEl.disabled=false;
+          var f=window.currentFund;
+          if(stampEl) stampEl.textContent="当前数据拉取于 "+timeStr(new Date())+" · 来源：天天基金网（点上方按钮可立即刷新）";
+          if(navEl && before.nav && navEl.textContent!==before.nav){
+            var upDown=(dchgEl && dchgEl.textContent.indexOf("-")<0)?"up":"dn";
+            flash(navEl, upDown); if(dchgEl) flash(dchgEl, upDown);
+          }
+          updateNotice(f);
+        }
+      }, 200);
+    };
+  }
+})();
+</script>
+
 </body>
 </html>
