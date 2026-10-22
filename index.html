@@ -5,17 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
     <link rel="icon" href="data:," />
-    <title>钱袋子学堂 - 基金数据快照看板、指标解读与定投复利计算器</title>
+    <title>成职二餐深夜学堂 - 基金数据快照看板、指标解读与定投复利计算器</title>
     <meta name="description" content="面向新手的金融科普与数据工具站：12 只真实基金数据快照看板（净值、阶段涨跌、回撤/波动/夏普估算）、大白话指标解读、历史收益回测、多维指标筛选榜、四合一复利定投计算器。只做客观数据工具，不荐股荐基、不预测涨跌、不承诺收益。" />
     <meta name="keywords" content="基金净值,基金数据,定投计算器,复利计算器,IRR计算器,最大回撤,夏普比率,沪深300,红利低波,基金科普" />
-    <meta property="og:title" content="钱袋子学堂 - 基金数据快照与复利工具箱" />
+    <meta property="og:title" content="成职二餐深夜学堂 - 基金数据快照与复利工具箱" />
     <meta property="og:description" content="真实数据快照看板、大白话指标解读、历史回测与四合一计算器。只科普、不荐基。" />
     <meta property="og:type" content="website" />
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "WebSite",
-      "name": "钱袋子学堂",
+      "name": "成职二餐深夜学堂",
       "description": "金融科普与客观数据工具站：基金数据快照看板、指标解读、历史回测、多维筛选榜与复利定投计算器。",
       "inLanguage": "zh-CN",
       "hasPart": [
@@ -431,7 +431,7 @@
   <body>
     <header class="site">
       <div class="wrap nav">
-        <a class="logo" href="#top"><span class="coin">¥</span>钱袋子学堂</a>
+        <a class="logo" href="#top"><span class="coin">¥</span>成职二餐深夜学堂</a>
         <nav aria-label="主导航">
           <a href="#funds">基金看板</a>
           <a href="#screener">筛选榜</a>
@@ -1024,7 +1024,7 @@
             <a href="#top">回到顶部</a>
           </div>
         </div>
-        <p class="copyright">钱袋子学堂 · 金融科普信息站 ｜ 行情与基金数据为公开数据的带日期快照（抓取于 2026-10-22，北京时间），非实时数据 ｜ 备案与广告接入后，本站将在此补充备案号与广告标识。</p>
+        <p class="copyright">成职二餐深夜学堂 · 金融科普信息站 ｜ 行情与基金数据为公开数据的带日期快照（抓取于 2026-10-22，北京时间），非实时数据 ｜ 备案与广告接入后，本站将在此补充备案号与广告标识。</p>
       </div>
     </footer>
 
@@ -1051,7 +1051,7 @@
     <div class="modal" id="shareModal" role="dialog" aria-modal="true" aria-label="我的测算战报卡">
       <div class="share-card">
         <button class="x" id="shareClose" type="button" aria-label="关闭">✕</button>
-        <div class="sc-tag">钱袋子学堂 · 我的测算战报</div>
+        <div class="sc-tag">成职二餐深夜学堂 · 我的测算战报</div>
         <h3 id="scTitle">定投测算结果</h3>
         <div class="sc-date" id="scDate">—</div>
         <svg id="scChart" viewBox="0 0 380 150" role="img" aria-label="测算曲线小图"></svg>
@@ -2194,7 +2194,7 @@ xFirst: "现在", xLast: "第 5 年"
 function openShare(){
 var s = __summary, f = currentFund;
 $("scTitle").textContent = s.mode;
-$("scDate").textContent = "钱袋子学堂 · 生成于 2026-10-22 · 基金数据快照截至 2026-10-22";
+$("scDate").textContent = "成职二餐深夜学堂 · 生成于 2026-10-22 · 基金数据快照截至 2026-10-22";
 var rowsHtml = s.rows.map(function(r){
 return "<div class='sc-row'><span class='k'>" + r[0] + "</span><span class='v num'>" + r[1] + "</span></div>";
 }).join("");
@@ -2268,7 +2268,7 @@ function openArticle(a, fromEl){
 lastFocus = fromEl || null;
 $("readerCat").textContent = a.cat + " · 难度：" + a.level;
 $("readerTitle").textContent = a.title;
-$("readerMeta").textContent = "钱袋子学堂 · 阅读约 " + a.mins + " 分钟 · 内容仅供学习参考，不构成投资建议";
+$("readerMeta").textContent = "成职二餐深夜学堂 · 阅读约 " + a.mins + " 分钟 · 内容仅供学习参考，不构成投资建议";
 $("readerBody").innerHTML = a.body.join("");
 var r = $("reader"); r.classList.add("open"); r.scrollTop = 0;
 document.body.style.overflow = "hidden";
