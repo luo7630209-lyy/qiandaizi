@@ -2622,5 +2622,219 @@ selectFund("460300", false);
   }, 300);
 })();
 </script>
+<
+Muse
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+patch.txt
+<!-- ================================================================
+     ★★★ 自动刷新补丁 v2：指数秒级刷新 + 基金最新净值自动更新 ★★★
+     指数：新浪财经行情接口，交易时段每 5 秒自动刷新；非交易时段显示最近收盘
+     基金：页面打开时自动拉取天天基金最新官方净值（替代写死的快照数字）
+     盘中估值：交易时段每 60 秒尝试天天基金估算接口，成功才显示并标注“估算”
+     任一接口失败自动回退页面内置快照，不影响原有功能
+     ================================================================ -->
+<style>
+  #liveFundStrip{margin:14px 0 4px;border:1px solid var(--line);border-radius:14px;background:var(--surface);padding:12px 14px}
+  #liveFundStrip .lf-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;font-weight:700}
+  #liveFundStrip .lf-dot{width:8px;height:8px;border-radius:50%;background:var(--down);display:inline-block}
+  #liveFundStrip .lf-status{font-size:12px;color:var(--muted);font-weight:400}
+  #liveFundStrip .lf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:10px}
+  .lf-card{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface2)}
+  .lf-name{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lf-nav{font-size:17px;font-weight:800;margin-top:2px}
+  .lf-meta{font-size:11px;color:var(--muted);margin-top:2px}
+  .lf-est{font-size:11px;margin-top:3px;display:none}
+  .lf-foot{font-size:11px;color:var(--muted);margin-top:10px;line-height:1.6}
+</style>
+<script>
+(function(){
+  "use strict";
+  function pad2(n){ return (n<10?"0":"")+n; }
+  function timeStr(d){ return pad2(d.getHours())+":"+pad2(d.getMinutes())+":"+pad2(d.getSeconds()); }
+  function dateStr(ts){ var d=new Date(ts); return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
+  function isTrading(d){
+    var day=d.getDay(); if(day===0||day===6) return false;
+    var mins=d.getHours()*60+d.getMinutes();
+    return (mins>=570 && mins<=690) || (mins>=780 && mins<=900);
+  }
+  function loadScript(url, timeoutMs){
+    return new Promise(function(resolve){
+      var s=document.createElement("script"), done=false;
+      s.src=url; s.async=true; s.referrerPolicy="no-referrer";
+      var t=setTimeout(function(){ if(!done){done=true; s.remove(); resolve(false);} }, timeoutMs||4000);
+      s.onload=function(){ if(!done){done=true; clearTimeout(t); s.remove(); resolve(true);} };
+      s.onerror=function(){ if(!done){done=true; clearTimeout(t); s.remove(); resolve(false);} };
+      document.head.appendChild(s);
+    });
+  }
+  function chgHTML(v){ return (v>=0?"▲ ":"▼ ")+v.toFixed(2)+"%"; }
+  function chgCls(v){ return v>=0?"up":"down"; }
+  function fmtPrice(v){ return v.toLocaleString("zh-CN",{minimumFractionDigits:2, maximumFractionDigits:2}); }
+
+  /* ---------- 1. 指数自动刷新（新浪财经行情接口） ---------- */
+  var IDX=[["s_sh000001","上证指数"],["s_sh000300","沪深300"],["s_sz399001","深证成指"],["s_sz399006","创业板指"]];
+  function applyIndex(key, price, pct){
+    var name=null, i;
+    for(i=0;i<IDX.length;i++) if(IDX[i][0]===key) name=IDX[i][1];
+    if(!name) return;
+    var chips=document.querySelectorAll("#tickerRow .chip"), c, k;
+    for(c=0;c<chips.length;c++){
+      var b=chips[c].querySelector("b");
+      if(b && b.textContent===name){
+        var nums=chips[c].querySelectorAll(".num");
+        if(nums.length>=2){ nums[0].textContent=fmtPrice(price); nums[1].textContent=chgHTML(pct); nums[1].className="num "+chgCls(pct); }
+      }
+    }
+    var cards=document.querySelectorAll("#idxGrid .idx-card");
+    for(k=0;k<cards.length;k++){
+      var nm=cards[k].querySelector(".i-name span");
+      if(nm && nm.textContent===name){
+        var val=cards[k].querySelector(".i-val"), ch=cards[k].querySelector(".i-chg"), dt=cards[k].querySelector(".i-date");
+        if(val) val.textContent=fmtPrice(price);
+        if(ch){ ch.textContent=chgHTML(pct); ch.className="i-chg num "+chgCls(pct); }
+        if(dt) dt.textContent="新浪财经行情 · 更新于 "+timeStr(new Date());
+      }
+    }
+  }
+  function refreshIndices(){
+    var s=document.createElement("script");
+    s.src="https://hq.sinajs.cn/list="+IDX.map(function(x){return x[0];}).join(",")+"&rn="+Date.now();
+    s.async=true; s.charset="gbk"; s.referrerPolicy="no-referrer";
+    s.onload=function(){
+      s.remove();
+      var got=0;
+      IDX.forEach(function(pair){
+        var raw=window["hq_str_"+pair[0]];
+        if(raw){
+          var p=raw.split(","), price=parseFloat(p[1]), pct=parseFloat(p[3]);
+          if(!isNaN(price)&&!isNaN(pct)){ applyIndex(pair[0], price, pct); got++; }
+        }
+      });
+      if(got>0){
+        var lbl=document.querySelector("#tickerRow .tlabel");
+        if(lbl) lbl.textContent=isTrading(new Date())
+          ? "指数行情 · 自动刷新中（新浪财经）· 更新于 "+timeStr(new Date())
+          : "指数行情 · 最近收盘（新浪财经）· 拉取于 "+timeStr(new Date());
+      }
+    };
+    s.onerror=function(){ s.remove(); };
+    document.head.appendChild(s);
+  }
+  refreshIndices();
+  setInterval(function(){ if(isTrading(new Date())) refreshIndices(); }, 5000);
+
+  /* ---------- 2. 基金最新官方净值自动更新（天天基金 pingzhongdata） ---------- */
+  var funds=(window.FUND_DATA||[]).slice();
+  var section=document.getElementById("funds");
+  var grid=null, statusEl=null, cardEls={};
+  if(section && funds.length){
+    var strip=document.createElement("div");
+    strip.id="liveFundStrip";
+    strip.innerHTML="<div class='lf-head'><span class='lf-dot'></span>12 只基金 · 最新官方净值<span class='lf-status' id='lfStatus'>正在从天天基金拉取最新数据…</span></div>"
+      +"<div class='lf-grid' id='lfGrid'></div>"
+      +"<div class='lf-foot'>净值与日涨跌为天天基金公布的最新官方数据，页面打开时自动拉取；阶段涨幅、最大回撤、夏普等仍为 2026-10-22 快照口径。盘中估算为第三方估算值，非官方净值，仅供参考。</div>";
+    var rule=section.querySelector(".sec-rule");
+    if(rule && rule.parentNode) rule.parentNode.insertBefore(strip, rule.nextSibling);
+    else section.insertBefore(strip, section.firstChild);
+    grid=strip.querySelector("#lfGrid"); statusEl=strip.querySelector("#lfStatus");
+    funds.forEach(function(f){
+      var card=document.createElement("div");
+      card.className="lf-card";
+      card.innerHTML="<div class='lf-name'></div>"
+        +"<div class='lf-nav num'>"+Number(f.nav).toFixed(4)+"</div>"
+        +"<div class='lf-meta'>"+f.asOf+" <span class='num "+chgCls(f.dchg)+"'>"+chgHTML(f.dchg)+"</span> · 快照</div>"
+        +"<div class='lf-est num'></div>";
+      card.querySelector(".lf-name").textContent=f.name;
+      card.querySelector(".lf-name").title=f.name;
+      grid.appendChild(card);
+      cardEls[f.code]=card;
+    });
+  }
+  function fetchFundNav(f){
+    window.Data_netWorthTrend=null;
+    return loadScript("https://fund.eastmoney.com/pingzhongdata/"+f.code+".js?v="+Date.now(), 4000).then(function(ok){
+      var trend=window.Data_netWorthTrend;
+      if(ok && trend && trend.length){
+        var last=trend[trend.length-1], card=cardEls[f.code];
+        if(card && last && typeof last.y==="number"){
+          card.querySelector(".lf-nav").textContent=Number(last.y).toFixed(4);
+          var dc=(typeof last.equityReturn==="number")?last.equityReturn:f.dchg;
+          card.querySelector(".lf-meta").innerHTML=dateStr(last.x)+" <span class='num "+chgCls(dc)+"'>"+chgHTML(dc)+"</span> · 官方净值";
+          return true;
+        }
+      }
+      return false;
+    });
+  }
+  var navDone=0;
+  function loadAllNavs(){
+    var chain=Promise.resolve();
+    funds.forEach(function(f){
+      chain=chain.then(function(){ return fetchFundNav(f); }).then(function(ok){ if(ok) navDone++; });
+    });
+    return chain.then(function(){
+      if(statusEl){
+        statusEl.textContent=navDone>0
+          ? "已自动更新 "+navDone+"/"+funds.length+" 只 · 拉取于 "+timeStr(new Date())
+          : "接口暂不可用，显示内置快照";
+      }
+      var sub=section?section.querySelector(".sec-sub"):null;
+      if(sub && navDone>0) sub.textContent="基金最新净值已由天天基金接口自动更新（拉取于 "+timeStr(new Date())+"）；阶段涨幅与风险指标仍为 2026-10-22 快照口径 · 来源：天天基金网";
+    });
+  }
+  if(funds.length) loadAllNavs();
+
+  /* ---------- 3. 盘中估算（天天基金 fundgz，交易时段每 60 秒；接口不可用自动放弃） ---------- */
+  var gzAlive=true;
+  function fetchGz(f){
+    return new Promise(function(resolve){
+      var prev=window.jsonpgz, settled=false;
+      var timer=setTimeout(function(){ if(!settled){ settled=true; window.jsonpgz=prev; resolve(null); } }, 2500);
+      window.jsonpgz=function(data){ if(!settled){ settled=true; clearTimeout(timer); window.jsonpgz=prev; resolve(data||null); } };
+      loadScript("https://fundgz.1234567.com.cn/js/"+f.code+".js?rt="+Date.now(), 2500).then(function(ok){
+        if(!settled && !ok){ settled=true; clearTimeout(timer); window.jsonpgz=prev; resolve(null); }
+      });
+    });
+  }
+  function applyEst(f, d){
+    var card=cardEls[f.code]; if(!card) return;
+    var pct=parseFloat(d.gszzl); if(isNaN(pct)) return;
+    var el=card.querySelector(".lf-est");
+    el.style.display="block";
+    el.className="lf-est num "+chgCls(pct);
+    el.textContent="盘中估算 "+(pct>=0?"+":"")+pct.toFixed(2)+"%"+(d.gztime?" · "+String(d.gztime).slice(11,16):"");
+  }
+  function refreshEstimates(){
+    if(!gzAlive || !funds.length) return;
+    fetchGz(funds[0]).then(function(first){
+      if(!first || typeof first.gszzl==="undefined" || first.gszzl===""){ gzAlive=false; return; }
+      applyEst(funds[0], first);
+      var chain=Promise.resolve();
+      funds.slice(1).forEach(function(f){
+        chain=chain.then(function(){ return fetchGz(f); }).then(function(d){ if(d) applyEst(f, d); });
+      });
+    });
+  }
+  setInterval(function(){ if(isTrading(new Date())) refreshEstimates(); }, 60000);
+  if(isTrading(new Date())) setTimeout(refreshEstimates, 8000);
+})();
+</script>
+
 </body>
 </html>
