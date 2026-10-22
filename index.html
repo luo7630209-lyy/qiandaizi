@@ -3318,5 +3318,130 @@ patch4.txt
   fetchEva(false);
 })();
 </script>
+
+Muse
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+patch6.txt
+<!-- ================================================================
+     ★★★ 补丁 v6：主搜框搜不到基金时，自动给出指数估值入口 ★★★
+     背景：国证地产、SZ399812 这类是指数代码，不是基金代码，
+     主搜框（搜基金用）里查不到属于正常。本补丁在“没有找到”
+     提示下方补一条指数匹配：点一下直接跳到指数估值榜并自动筛选，
+     同时给出蛋卷关联的跟踪基金代码，方便回到主搜查基金。
+     数据仍走 v5 的蛋卷中转，不新增数据源。
+     ================================================================ -->
+<style>
+  #v6IdxHint{border-top:1px dashed var(--line,#dfe4ee);padding:9px 10px 4px;text-align:left}
+  #v6IdxHint .v6h{font-size:12px;color:var(--muted,#8a93a6);margin-bottom:6px;line-height:1.6}
+  .v6row{display:flex;align-items:center;gap:8px;width:100%;border:1px solid var(--line,#e5e9f0);background:var(--surface2,#f6f8fb);border-radius:10px;padding:8px 10px;margin-bottom:6px;cursor:pointer;text-align:left;color:inherit}
+  .v6row .v6n{font-weight:700;font-size:13.5px}
+  .v6row .v6c{font-size:11px;color:var(--muted,#8a93a6)}
+  .v6row .v6m{margin-left:auto;font-size:12px;color:var(--muted,#5b6474);white-space:nowrap}
+  .v6chip{font-size:11px;font-weight:700;border-radius:99px;padding:2px 8px;white-space:nowrap}
+  .v6low{background:#e5f7ef;color:#0a9d68}
+  .v6mid{background:#fdf3e0;color:#c77400}
+  .v6high{background:#fdecec;color:#e5484d}
+  .v6sub{font-size:11px;color:var(--muted,#8a93a6);margin:-2px 2px 7px}
+</style>
+<script>
+(function(){
+  "use strict";
+  var API="https://qiandaizi-api.luo7630209.workers.dev/dj";
+  function $(id){ return document.getElementById(id); }
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+  var ZT=["低位区","中位区","高位区"], ZC=["v6low","v6mid","v6high"];
+  var cache=null, loading=null;
+  function loadData(){
+    if(cache) return Promise.resolve(cache);
+    if(loading) return loading;
+    loading=fetch(API).then(function(r){ return r.json(); }).then(function(j){
+      cache=(j && j.data && j.data.items) || [];
+      return cache;
+    }).catch(function(){ loading=null; return []; });
+    return loading;
+  }
+  function matchIdx(items, q){
+    var s=(q||"").trim(); if(!s) return [];
+    var up=s.toUpperCase(), digits=s.replace(/\D/g,"");
+    return items.filter(function(it){
+      var code=(it.index_code||"").toUpperCase();
+      if((it.name||"").indexOf(s)>=0) return true;
+      if(code===up) return true;
+      if(digits.length>=5 && code.replace(/\D/g,"")===digits) return true;
+      if(up.length>=4 && code.indexOf(up)>=0) return true;
+      return false;
+    }).slice(0,5);
+  }
+  function jumpToEva(name){
+    var q=$("evaQ"), sec=$("evaSection"), box=$("fundSuggest"), inp=$("fundSearch");
+    if(q){ q.value=name; q.dispatchEvent(new Event("input",{bubbles:true})); }
+    if(box) box.hidden=true;
+    if(inp) inp.blur();
+    if(sec) sec.scrollIntoView({behavior:"smooth", block:"start"});
+  }
+  function tryHint(){
+    var box=$("fundSuggest"), inp=$("fundSearch");
+    if(!box || !inp || box.hidden) return;
+    if(!box.querySelector(".sg-none")) return;
+    var q=inp.value.trim(); if(!q) return;
+    var old=$("v6IdxHint");
+    if(old && old.getAttribute("data-q")===q) return;
+    loadData().then(function(items){
+      var hits=matchIdx(items, q);
+      if(!hits.length) return;
+      if(box.hidden || !box.querySelector(".sg-none")) return;
+      if(inp.value.trim()!==q) return;
+      var prev=$("v6IdxHint"); if(prev) prev.remove();
+      var wrap=document.createElement("div");
+      wrap.id="v6IdxHint";
+      wrap.setAttribute("data-q", q);
+      var html="<div class='v6h'>你要找的可能是<b>指数</b>（指数本身没有净值、不能直接买，它的估值在这里看）：</div>";
+      hits.forEach(function(it){
+        var z=(it.eva_type_int==null?1:it.eva_type_int);
+        var m=/funding\/(\d{6})/.exec(it.url||"");
+        html+="<button type='button' class='v6row' data-name='"+esc(it.name)+"'>"
+          +"<span class='v6n'>"+esc(it.name)+"</span><span class='v6c'>"+esc(it.index_code)+"</span>"
+          +"<span class='v6chip "+ZC[z]+"'>"+ZT[z]+"</span>"
+          +"<span class='v6m'>PE "+(+it.pe).toFixed(2)+" · 百分位 "+(it.pe_percentile*100).toFixed(2)+"%</span></button>"
+          +(m ? "<div class='v6sub'>想买跟踪它的基金，可在上方搜代码 "+m[1]+"</div>" : "");
+      });
+      wrap.innerHTML=html;
+      wrap.addEventListener("click", function(e){
+        var b=e.target.closest(".v6row"); if(!b) return;
+        jumpToEva(b.getAttribute("data-name"));
+      });
+      box.appendChild(wrap);
+    });
+  }
+  var box0=$("fundSuggest");
+  if(box0 && window.MutationObserver){
+    var mo=new MutationObserver(function(){ setTimeout(tryHint, 350); });
+    mo.observe(box0, {childList:true, subtree:true, attributes:true, attributeFilter:["hidden"]});
+  }
+  var inp0=$("fundSearch");
+  if(inp0) inp0.addEventListener("input", function(){ setTimeout(tryHint, 700); });
+})();
+</script>
+
 </body>
 </html>
