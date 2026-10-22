@@ -3521,5 +3521,125 @@ patch7.txt
   }
 })();
 </script>
+<!-- ================================================================
+     ★★★ 补丁 v8：估值榜补齐字段 + 全站区分入口 + 视觉统一 ★★★
+     1. 估值榜每行补齐「PB 百分位、预测PEG」（与蛋卷表格同字段），
+        详情页估值卡同步补预测PEG（无该数据的指数显示 —）。
+     2. 页头导航新增「指数估值」入口，点击直达估值榜并闪烁定位；
+        估值榜顶部加一行区分提示，一键跳回基金搜索，
+        让“搜基金”和“看指数估值”两个地方彻底分开。
+     3. 视觉统一：估值榜去掉外框，改成与全站一致的白卡片+柔和阴影，
+        标题加大，网格改 3 列×2 行，不再灰扑扑乱糟糟。
+     ================================================================ -->
+<style>
+  #evaSection{border:none;background:transparent;padding:10px 0 0;scroll-margin-top:84px;border-radius:0}
+  #evaSection .eva-head h3{font-size:21px;font-weight:800}
+  #evaSection .eva-row{background:#fff;border-color:transparent;box-shadow:0 2px 12px rgba(20,24,38,.06);border-radius:14px;padding:13px 14px}
+  #evaSection .eva-grid{grid-template-columns:repeat(3,1fr);gap:10px 6px}
+  #evaCard{background:#fff;box-shadow:0 2px 12px rgba(20,24,38,.06);border-color:transparent}
+  @keyframes v8ring{0%{box-shadow:0 0 0 0 rgba(37,99,235,.45)}100%{box-shadow:0 0 0 14px rgba(37,99,235,0)}}
+  #evaSection.v8arrive{animation:v8ring 1s ease-out 2;border-radius:14px}
+  .v8dist{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 2px;font-size:12.5px;color:var(--muted,#8a93a6);background:var(--surface2,#f6f8fb);border:1px dashed var(--line,#dfe4ee);border-radius:10px;padding:8px 11px}
+  #v8GoFund{border:1px solid var(--brand,#2563eb);color:var(--brand,#2563eb);background:#fff;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer}
+</style>
+<script>
+(function(){
+  "use strict";
+  var API="https://qiandaizi-api.luo7630209.workers.dev/dj";
+  function $(id){ return document.getElementById(id); }
+  function pct(x){ return (x==null||isNaN(x))?"—":(x*100).toFixed(2)+"%"; }
+  function pegTxt(x){ return (x==null||isNaN(x))?"—":(+x).toFixed(2); }
+  var byCode={}, byName=[], dataReady=null;
+  function loadData(){
+    if(dataReady) return dataReady;
+    dataReady=fetch(API).then(function(r){ return r.json(); }).then(function(j){
+      var items=(j && j.data && j.data.items) || [];
+      items.forEach(function(it){ byCode[it.index_code]=it; byName.push(it); });
+      byName.sort(function(a,b){ return (b.name||"").length-(a.name||"").length; });
+      return items;
+    }).catch(function(){ return []; });
+    return dataReady;
+  }
+
+  /* ---------- 1. 估值榜补字段：PB 百分位 + 预测PEG ---------- */
+  function augmentRow(row){
+    if(row.getAttribute("data-v8")) return;
+    var codeEl=row.querySelector(".eva-code"), grid=row.querySelector(".eva-grid");
+    if(!codeEl || !grid) return;
+    var it=byCode[codeEl.textContent.trim()];
+    row.setAttribute("data-v8","1");
+    if(!it) return;
+    var cells=grid.children;
+    var pbCell=document.createElement("div");
+    pbCell.innerHTML="PB 百分位<b>"+pct(it.pb_percentile)+"</b>";
+    if(cells.length>=2) grid.insertBefore(pbCell, cells[2]); else grid.appendChild(pbCell);
+    var pegCell=document.createElement("div");
+    pegCell.innerHTML="预测PEG<b>"+pegTxt(it.peg)+"</b>";
+    grid.appendChild(pegCell);
+  }
+  function augmentBoard(){
+    var rows=document.querySelectorAll("#evaList .eva-row");
+    for(var i=0;i<rows.length;i++) augmentRow(rows[i]);
+  }
+
+  /* ---------- 2. 详情卡补预测PEG ---------- */
+  var lastCardKey="";
+  function augmentCard(){
+    var card=$("evaCard");
+    if(!card || card.style.display==="none") return;
+    var h4=card.querySelector("h4"), grid=card.querySelector(".eva-grid");
+    if(!h4 || !grid) return;
+    var key=h4.textContent;
+    if(key===lastCardKey) return;
+    var it=null;
+    for(var i=0;i<byName.length;i++){ if(key.indexOf(byName[i].name)>=0){ it=byName[i]; break; } }
+    if(!it) { lastCardKey=key; return; }
+    if(!grid.querySelector(".v8peg")){
+      var c=document.createElement("div");
+      c.className="v8peg";
+      c.innerHTML="预测PEG<b>"+pegTxt(it.peg)+"</b>";
+      grid.appendChild(c);
+    }
+    lastCardKey=key;
+  }
+
+  function refresh(){ loadData().then(function(){ augmentBoard(); augmentCard(); }); }
+  if(window.MutationObserver){
+    var list=$("evaList");
+    if(list) new MutationObserver(function(){ setTimeout(refresh, 60); }).observe(list, {childList:true});
+    new MutationObserver(function(){ setTimeout(augmentCard, 60); }).observe(document.body, {childList:true, subtree:true});
+  }
+  refresh();
+
+  /* ---------- 3. 区分入口：导航 + 榜首提示条 ---------- */
+  var nav=document.querySelector("header.site nav");
+  if(nav && !nav.querySelector("a[href='#evaSection']")){
+    var a=document.createElement("a");
+    a.href="#evaSection"; a.textContent="指数估值"; a.id="v8NavEva";
+    nav.appendChild(a);
+  }
+  var sec=$("evaSection"), head=sec && sec.querySelector(".eva-head");
+  if(sec && head && !$("v8Dist")){
+    var dist=document.createElement("div");
+    dist.className="v8dist"; dist.id="v8Dist";
+    dist.innerHTML="<span>📌 这里是<b>指数</b>估值榜（指数不能直接买，只看贵不贵）</span><button type='button' id='v8GoFund'>去搜基金 ↑</button>";
+    head.parentNode.insertBefore(dist, head.nextSibling);
+    dist.querySelector("#v8GoFund").addEventListener("click", function(){
+      var inp=$("fundSearch"); if(!inp) return;
+      inp.scrollIntoView({behavior:"smooth", block:"center"});
+      setTimeout(function(){ inp.focus({preventScroll:true}); }, 550);
+    });
+  }
+  document.addEventListener("click", function(e){
+    if(e.target.closest && (e.target.closest(".v6row") || e.target.closest("#v8NavEva"))){
+      setTimeout(function(){
+        var s=$("evaSection"); if(!s) return;
+        s.classList.remove("v8arrive"); void s.offsetWidth; s.classList.add("v8arrive");
+        setTimeout(function(){ s.classList.remove("v8arrive"); }, 2100);
+      }, 650);
+    }
+  });
+})();
+</script>
 </body>
 </html>
